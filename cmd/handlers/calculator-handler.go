@@ -8,8 +8,11 @@ import (
 	"strings"
 )
 
+type clientData struct {
+	data []outData `json:"data"`
+}
 type outData struct {
-	calcData []ratesCalculator.Rates `json:"calc_data"`
+	calcData [][]ratesCalculator.Rates `json:"calc_data"`
 }
 
 // Main Handle
@@ -18,8 +21,9 @@ func HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (
 	idsList := request.QueryStringParameters["ids"]
 	if idsList != "" {
 		ids := strings.Split(idsList, ",")
+
 		for _, val := range ids {
-			out.calcData = append(out.calcData, ratesCalculator.CalculateClassificationRates(val)...)
+			out.calcData = append(out.calcData, ratesCalculator.CalculateClassificationRates(val))
 		}
 	}
 	//data := ratesCalculator.CalculateClassificationRates("4110017000008053215")
