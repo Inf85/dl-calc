@@ -1,6 +1,7 @@
 package creator
 
 import (
+	"bytes"
 	"fmt"
 	creator "prevailing-calculator/pkg/creator/api/system"
 	"strconv"
@@ -35,8 +36,7 @@ func (receiver *ReportData) GetAll(reportUrl string, from int, limit int, criter
 	m := make(map[string]string)
 	m["from"] = strconv.Itoa(from)
 	m["limit"] = strconv.Itoa(limit)
-	//m["sort_order"] = "Effective_Date"
-	//m["sort_by"] = "desc"
+
 	if criteria != "" {
 		m["criteria"] = criteria
 	} else {
@@ -51,4 +51,15 @@ func (receiver *ReportData) GetAll(reportUrl string, from int, limit int, criter
 
 	return response, nil
 
+}
+
+func (receiver *ReportData) UpdateById(recordId string, reportUrl string, data *bytes.Buffer) ([]byte, error) {
+	fmt.Println(data)
+	response, err := receiver.httpClient.Request("PATCH", fmt.Sprintf("%s", receiver.baseUrl+"/"+reportUrl+"/"+recordId), data, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return response, nil
 }

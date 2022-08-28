@@ -13,8 +13,9 @@ import (
 )
 
 type ApiClassificationData struct {
-	Code float64
-	Data models.ClassificationRates `json:"data"`
+	Code    float64
+	Data    models.ClassificationRates `json:"data"`
+	Message string                     `json:"message"`
 }
 
 type ApiNewPayRates struct {
@@ -43,6 +44,7 @@ type ApiEstimateData struct {
 }
 
 type Rates struct {
+	ID                  string  `json:"classification_id"`
 	WeekNumber          int32   `json:"Week_Number"`
 	WeekDate            string  `json:"Week_Date"`
 	LengthOfService     int32   `json:"Length_of_Service"`
@@ -59,12 +61,23 @@ type Rates struct {
 	Estimate            string  `json:"Estimate"`
 }
 
+type InsertData struct {
+	Employees string  `json:"Employees"`
+	Rates     []Rates `json:"Rates"`
+}
+
+type ApiInsertData struct {
+	Data json.RawMessage `json:"data"`
+}
+
 var apiClassificationData ApiClassificationData
 var apiEstimateData ApiEstimateData
 var newPayRates ApiNewPayRates
 var apiSupplementalRates ApiSupplementalRates
 var apiVacRate ApiVacRate
 var apiHalconePTORate ApiHalconePTORate
+var insertData InsertData
+var apiInsertData ApiInsertData
 
 var dateLayout = "01/02/2006"
 var vacAccrued float64
@@ -73,11 +86,14 @@ var prevsPers float64
 var vacRate string
 var sickRate string
 var persR float64
+var totalCost float64
+var totalCustomerCharge float64
+var totalProfit float64
 
 var wg sync.WaitGroup
 var lock sync.Mutex
 
-func CalculateClassificationRates(recordID string) {
+func CalculateClassificationRates(recordID string) []Rates {
 
 	data, _ := getClassificationData(recordID)
 	estimate, _ := getEstimateData(data.Estimate.ID)
@@ -86,12 +102,10 @@ func CalculateClassificationRates(recordID string) {
 	weeklyHours, _ := strconv.ParseFloat(data.WeeklyHours, 64)
 	serviceFee, _ := strconv.ParseFloat(data.ServiceFee, 64)
 	markUp, _ := strconv.ParseFloat(data.MarkUp, 64)
-
 	rates := make([]Rates, numberOfWeeks)
-
+	wg.Add(numberOfWeeks)
 	for i := 1; i <= 52; i++ {
 
-		prevsPers = 0.00
 		vacAccrued = 0.00
 		sickAccrued = 0.00
 
@@ -101,9 +115,9 @@ func CalculateClassificationRates(recordID string) {
 		if i > numberOfWeeks {
 			break
 		}
-		wg.Add(numberOfWeeks)
-		go func(i int) {
 
+		go func(i int) {
+			rates[i-1].ID = recordID
 			rates[i-1].WeekNumber = int32(i)
 			startDate, _ := time.Parse(dateLayout, estimate.StartDate)
 			dateOfHire, _ := time.Parse(dateLayout, data.DateOfHire)
@@ -148,7 +162,6 @@ func CalculateClassificationRates(recordID string) {
 				criteriaString = "(" + criteriaString + ")"
 				rows, _ := report.GetAll("pbsportal639/prevailing-utility/report/All_Supplemental_Rates", 0, 200, criteriaString)
 				json.Unmarshal(rows, &apiSupplementalRates)
-				fmt.Println(apiSupplementalRates)
 				if apiSupplementalRates.Code == 3000 {
 					supRate = apiSupplementalRates.Data[len(apiSupplementalRates.Data)-1].SupplementalRate
 				}
@@ -260,22 +273,25 @@ func CalculateClassificationRates(recordID string) {
 			supRateFloat, _ := strconv.ParseFloat(supRate, 64)
 			ptoPayAmount := payRateFloat * ptoAccrued
 			ptoSupAmount := supRateFloat * ptoAccrued
-			markUpRate := rates[i-1].PayAmount * markUp / 100
-			rates[i-1].PTOAmount = ptoPayAmount + ptoSupAmount
-			rates[i-1].TotalCost = rates[i-1].PayAmount + rates[i-1].SupplementalAmount + rates[i-1].PTOAmount
+			markUpRate := helspers.ToFixed(rates[i-1].PayAmount*markUp/100, 2)
+			rates[i-1].PTOAmount = helspers.ToFixed(ptoPayAmount+ptoSupAmount, 2)
+			rates[i-1].TotalCost = helspers.ToFixed(rates[i-1].PayAmount+rates[i-1].SupplementalAmount+rates[i-1].PTOAmount, 2)
 			rates[i-1].SupervisionFee = weeklyHours * serviceFee
 			rates[i-1].MarkUpRate = helspers.ToFixed(rates[i-1].PayRate*markUp/100, 2)
 			rates[i-1].TotalCustomerCharge = helspers.ToFixed(rates[i-1].PayAmount+serviceFee+markUpRate+rates[i-1].SupplementalAmount+rates[i-1].PTOAmount, 2)
 			rates[i-1].TotalProfit = helspers.ToFixed(rates[i-1].TotalCustomerCharge-rates[i-1].PayAmount-rates[i-1].SupplementalAmount-rates[i-1].PTOAmount, 2)
-			fmt.Println(i)
+			rates[i-1].Estimate = data.Estimate.ID
+			totalCost = totalCost + rates[i-1].TotalCost
+			totalCustomerCharge = totalCustomerCharge + rates[i-1].TotalCustomerCharge
+			totalProfit = totalProfit + rates[i-1].TotalProfit
 			wg.Done()
-
 		}(i)
 
 	}
 	wg.Wait()
 	fmt.Println(rates)
 	//fmt.Println(estimate)
+	return rates
 }
 
 func getEstimateData(estimateID string) (models.Estimate, error) {
@@ -289,7 +305,7 @@ func getEstimateData(estimateID string) (models.Estimate, error) {
 	if err != nil {
 		return models.Estimate{}, err
 	}
-
+	fmt.Println(apiEstimateData.Data)
 	return apiEstimateData.Data, nil
 }
 
@@ -297,6 +313,21 @@ func getClassificationData(recordID string) (models.ClassificationRates, error) 
 	apiClassificationData = ApiClassificationData{}
 	creatorApi := creator.NewCreatorApi()
 	report := creatorApi.Report()
+	/*	insertData = InsertData{
+			Employees: "3",
+			Rates:     []Rates{{WeekNumber: 53, WeekDate: "08/08/2022", LengthOfService: 7, PayRate: 44.00, MarkUpRate: 8.14, SupervisionFee: 50.00, PayAmount: 20.00, SupplementalRate: 14.00, SupplementalAmount: 45.00, PTOAmount: 45.00, TotalCost: 55.00, TotalCustomerCharge: 44.00, TotalProfit: 65.00}},
+		}
+
+		s, err1 := json.Marshal(&insertData)
+		if err1 != nil {
+			log.Fatal(err1)
+		}
+		apiInsertData = ApiInsertData{Data: json.RawMessage(s)}
+		s1, _ := json.Marshal(&apiInsertData)
+		reader := bytes.NewBuffer(s1)
+		resp, _ := report.UpdateById(recordID, "pbsportal639/prevailing-utility/report/All_Classification_Rates", reader)
+		json.Unmarshal(resp, &apiClassificationData)
+		fmt.Println(apiClassificationData)*/
 	classificationRate, _ := report.GetById(recordID, "pbsportal639/prevailing-utility/report/All_Classification_Rates")
 
 	err := json.Unmarshal(classificationRate, &apiClassificationData)

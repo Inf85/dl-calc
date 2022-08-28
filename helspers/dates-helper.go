@@ -41,6 +41,10 @@ func DatesDiff(a, b time.Time) (year, month, day int) {
 		day += 32 - t.Day()
 		month--
 	}
+
+	if year > 0 {
+		month += 12 * year
+	}
 	if month < 0 {
 		month += 12
 		year--

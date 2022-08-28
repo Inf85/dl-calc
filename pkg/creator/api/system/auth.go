@@ -1,28 +1,24 @@
 package creator
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"prevailing-calculator/pkg/redis"
-	"time"
 )
 
-func GetAccessToken() (string, error) {
+var ctx = context.Background()
 
-	redisClient := redis.NewRedis()
-	token, err := redisClient.Redis().Get("zoho-token").Result()
+func GetAccessToken() string {
 
-	if err != nil {
-		token, _ = refreshAuthToken()
-		redisClient.Redis().Set("zoho-token", token, 3590*time.Millisecond)
-		return token, err
-	}
+	//redisClient := redis.NewRedis()
+	//token := redisClient.Redis().Get(ctx, "zoho-token-calc").Val()
+	token, _ := refreshAuthToken()
 
-	return token, nil
+	return token
 }
 
 /*

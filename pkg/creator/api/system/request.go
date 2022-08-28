@@ -17,13 +17,14 @@ type Single struct {
 	httpClient http.Client
 	httpQuery  map[string]string
 	baseUrl    string
+	token      string
 }
 
 func GetInstance() *Single {
 	if instance == nil {
 		lock.Lock()
 		defer lock.Unlock()
-		instance = &Single{}
+		instance = &Single{token: GetAccessToken()}
 	}
 
 	return instance
@@ -33,10 +34,8 @@ func GetInstance() *Single {
 	Access Token
 */
 func (s *Single) getAuthToken() string {
-	accessToken, err := GetAccessToken()
-	if err != nil && accessToken == "" {
-		return ""
-	}
+	accessToken := GetAccessToken()
+
 	return accessToken
 }
 
@@ -64,9 +63,10 @@ func (s *Single) Request(method string, uri string, body io.Reader, query map[st
 	for key, value := range query {
 		params.Add(key, value)
 	}
+
 	request, _ := http.NewRequest(method, uri+"?"+params.Encode(), body)
 	request.Header.Add("Content-Type", "application/json")
-	request.Header.Add("Authorization", "Zoho-oauthtoken "+s.getAuthToken())
+	request.Header.Add("Authorization", "Zoho-oauthtoken "+s.token)
 
 	response, err := s.httpClient.Do(request)
 
@@ -76,6 +76,5 @@ func (s *Single) Request(method string, uri string, body io.Reader, query map[st
 
 	defer response.Body.Close()
 	bodyData, _ := ioutil.ReadAll(response.Body)
-
 	return bodyData, nil
 }
